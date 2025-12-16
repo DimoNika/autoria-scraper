@@ -1,0 +1,35 @@
+services:
+  app:
+    build:
+      context: app
+      dockerfile: Dockerfile
+
+    networks:
+      - net
+    # environment:
+    #   - ENV=production
+
+
+  db:
+    image: postgres
+    container_name: postgres_db
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: mydatabase
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    depends_on:
+      - app
+    networks:
+      - net
+
+volumes:
+  db_data:
+
+networks:
+  net:
+    driver: bridge

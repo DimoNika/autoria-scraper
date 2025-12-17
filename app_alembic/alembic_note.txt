@@ -1,0 +1,7 @@
+alembic revision --autogenerate
+
+
+to move to generated migration
+alembic upgrade head
+
+alembic downgrade -1

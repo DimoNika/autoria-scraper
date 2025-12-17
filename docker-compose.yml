@@ -4,8 +4,13 @@ services:
       context: app
       dockerfile: Dockerfile
 
+    volumes:
+      - ./app:/app
+      - ./shared:/app/shared
     networks:
       - net
+    depends_on:
+      - db
     # environment:
     #   - ENV=production
 
@@ -22,8 +27,6 @@ services:
       POSTGRES_DB: mydatabase
     volumes:
       - db_data:/var/lib/postgresql/data
-    depends_on:
-      - app
     networks:
       - net
 

@@ -15,7 +15,6 @@ from pathlib import Path
 
 
 env_path = Path(__file__).resolve().parent / "shared" / ".env"
-print(env_path)
 load_dotenv(env_path)
 
 
@@ -24,12 +23,11 @@ postgre_password = os.getenv("POSTGRES_PASSWORD")
 postgres_db = os.getenv("POSTGRES_DB")
 
 urls_at_once = int(os.getenv("AMOUNT_OF_URLS_SRCRAPED_FROM_PAGE_AT_ONCE"))
-# environment variables block
-
 
 
 engine = create_engine(f"postgresql+psycopg2://{postgre_user}:{postgre_password}@db/{postgres_db}", echo=True)
 
+# Blocker that blokes unnecessary resources, makes work faster
 async def block_resources(page):
     async def handle_route(route, request):
         if request.resource_type in ["image", "font"]:
@@ -38,18 +36,10 @@ async def block_resources(page):
         else:
             await route.continue_()
 
-    # перехватываем все запросы
     await page.route("**/*", handle_route)
 
 
-def price_str_to_int(price: str):
-    new_price = ""
-    for i in price:
-        if i.isdigit():
-            new_price += i
-    return int(new_price)
-
-
+# Function converts odometer value
 def odometer_to_int(odometer: str):
     
     if odometer == "Без пробігу":
@@ -57,9 +47,8 @@ def odometer_to_int(odometer: str):
     
     return int(re.sub(r"\D", "", odometer)) * 1000
 
-
+# Function gets url to process from db
 def get_next_url():
-    print("in get_next_url", flush=True)
     with Session(engine) as session:
 
         url = session.execute(
@@ -82,14 +71,14 @@ def get_next_url():
 
         return url.url
 
-def update_url_as_processed(url):
-    with Session(engine) as session:
+# def update_url_as_processed(url):
+#     with Session(engine) as session:
 
-        url_obj: UrlQueue = session.query(UrlQueue).filter_by(url=url).first()
-        # url_obj:UrlQueue = select(UrlQueue).where(UrlQueue.url == url).first()
-        url_obj.is_processed = True
+#         url_obj: UrlQueue = session.query(UrlQueue).filter_by(url=url).first()
+#         # url_obj:UrlQueue = select(UrlQueue).where(UrlQueue.url == url).first()
+#         url_obj.is_processed = True
         
-        session.commit()
+#         session.commit()
 
     
 
@@ -114,29 +103,24 @@ async def proccess(browser: Browser):
     # car_number (рядок)
     # car_vin (рядок)
     # datetime_found (дата збереження в базу)
-    try:
-        while True:
-            print("NOT DEAD?")
+    while True:
+        try:    
+
             url_raw = await asyncio.to_thread(get_next_url)
-            print("NOT DEAD?2")
 
             if url_raw is None:
-                print("BROKE at ", url_raw)
                 break
 
             # get_next_url now returns the raw path string (e.g. "/some/path")
             url = "https://auto.ria.com" + url_raw
-            print("PRODUCT", url)
+
 
             
             page = await browser.new_page()
 
-            
-
             await block_resources(page)
 
             await page.goto(url)
-
 
             # title
             try:
@@ -223,7 +207,7 @@ async def proccess(browser: Browser):
                 print("Error at car creation")
 
             await asyncio.to_thread(create_car, new_car)
-            await asyncio.to_thread(update_url_as_processed, url_raw)
+
             
             
 
@@ -241,8 +225,9 @@ async def proccess(browser: Browser):
                 f"car_vin: {car_vin}\n"
                 ))
             await page.close()
-    except Exception as e:
-        print("BEBRA", str(e))
+
+        except Exception as e:
+            continue
             
 
 

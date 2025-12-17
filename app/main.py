@@ -6,7 +6,7 @@ from playwright.async_api import async_playwright, Browser
 
 from shared.models import Car, UrlQueue
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, delete
 from sqlalchemy.dialects.postgresql import  insert
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm import Session
@@ -20,13 +20,11 @@ from dotenv import load_dotenv
 import os
 from pathlib import Path
 
-import schedule
 from datetime import datetime, time as dt_time, timedelta
 import subprocess
-from time import sleep
+
 
 env_path = Path(__file__).resolve().parent / "shared" / ".env"
-print(env_path)
 load_dotenv(env_path)
 
 
@@ -43,7 +41,7 @@ engine = create_engine(f"postgresql+psycopg2://{postgre_user}:{postgre_password}
 
 print("STARTED")
 
-
+# Function adds list of urls to db
 def create_url(url_list):
     with Session(engine) as session:
         session.execute(
@@ -53,13 +51,13 @@ def create_url(url_list):
         )
         session.commit()
 
+# Function scrapes site for total amount of positions
 async def get_amount():
 
     async with async_playwright() as p:
         browser = await p.chromium.launch()
         page = await browser.new_page()
         await page.goto("https://auto.ria.com/uk/search/?search_type=2&abroad=0&customs_cleared=1&page=0&limit=1")
-        # element = page.locator(".vertical-center.horizontal-between.grid-template.full")
         element = page.locator('xpath=//*[@id="SortButtonContentCount"]/span')
 
         number = ""
@@ -68,12 +66,9 @@ async def get_amount():
             if i.isdigit():
                 number += i
 
-
-        
-        print(int(number))
     return int(number)
 
-
+# Blocker that blokes unnecessary resources, makes work faster
 async def block_resources(page):
     async def handle_route(route, request):
         if request.resource_type in ["image", "stylesheet", "font"]:
@@ -82,9 +77,10 @@ async def block_resources(page):
         else:
             await route.continue_()
 
-    # перехватываем все запросы
     await page.route("**/*", handle_route)
 
+
+# Function scrapes for urls of positions
 async def get_urls(sem: asyncio.Semaphore, browser: Browser, page_number: int, positions_at_once: int):
     
     async with sem:
@@ -99,7 +95,6 @@ async def get_urls(sem: asyncio.Semaphore, browser: Browser, page_number: int, p
         await page.goto(f"https://auto.ria.com/uk/search/?search_type=2&abroad=0&customs_cleared=1&page={page_number}&limit={positions_at_once}")
         elements = page.locator(".link.product-card.horizontal")
         
-        print("Func launched")
         print(f"https://auto.ria.com/uk/search/?search_type=2&abroad=0&customs_cleared=1&page={page_number}&limit={positions_at_once}")
         print(await elements.count())
         
@@ -107,7 +102,6 @@ async def get_urls(sem: asyncio.Semaphore, browser: Browser, page_number: int, p
         for i in range(await elements.count()):
             el = elements.nth(i)
             url = await el.get_attribute("href")
-            # print(url)
             url_list.append({"url": url, "is_processed": False})
         
         await asyncio.to_thread(create_url, url_list)
@@ -117,7 +111,7 @@ async def get_urls(sem: asyncio.Semaphore, browser: Browser, page_number: int, p
 
 
 
-
+# Functio starter of position scraping with delay, so urls have time to be found
 async def delayed_process_start(delay, browser, workers):
     await asyncio.sleep(delay)
     await asyncio.gather(
@@ -134,7 +128,7 @@ async def main():
     pages_to_scrape = ceil(positions / urls_at_once)
     urls_scrape_sem = asyncio.Semaphore(2)
     proccess_workers = 3
-    process_sem = asyncio.Semaphore(proccess_workers)
+    
 
 
     
@@ -143,7 +137,7 @@ async def main():
 
 
         task1 = asyncio.gather(
-            *(get_urls(urls_scrape_sem, browser, page_number, urls_at_once) for page_number in range(4)),
+            *(get_urls(urls_scrape_sem, browser, page_number, urls_at_once) for page_number in range(pages_to_scrape)),
             return_exceptions=True
         )
 
@@ -175,10 +169,17 @@ async def main():
     print("stdout:", result.stdout)
     print("stderr:", result.stderr)
 
+    with Session(engine) as session:
+        session.execute(delete(UrlQueue))
+        session.execute(delete(Car))
+        session.commit()
+    
+    print("Iteration finished")
+        
 
 
+# Function counts time to next execution
 async def wait_until(target_time: dt_time):
-    """Ждём до указанного времени (сегодня или завтра)"""
     now = datetime.now()
     run_time = datetime.combine(now.date(), target_time)
     if run_time < now:
@@ -186,8 +187,9 @@ async def wait_until(target_time: dt_time):
     wait_seconds = (run_time - now).total_seconds()
     await asyncio.sleep(wait_seconds)
 
+
+# Function that waits time than lounches main
 async def daily_task(target_time: dt_time, coro):
-    """Запускает асинхронную задачу каждый день в target_time"""
     while True:
         await wait_until(target_time)
         try:
@@ -198,22 +200,13 @@ async def daily_task(target_time: dt_time, coro):
             print(f"Error during daily task: {e}", flush=True)
 
 async def scheduler():
-    target = dt_time(hour=5, minute=34)
-    await daily_task(target, main)  # main — твоя асинхронная функция
+    hours_to_scrap = int(os.getenv("TIME_HOURS_TO_SCRAP"))
+    minutes_to_scrap = int(os.getenv("TIME_MINUTES_TO_SCRAP"))
+    
+    target = dt_time(hour=hours_to_scrap, minute=minutes_to_scrap)
+    await daily_task(target, main)
 
 if __name__ == "__main__":
     print(datetime.now())
     asyncio.run(scheduler())
 
-# time_to_scrap = os.getenv("TIME_TO_SCRAP")
-# def test():
-#     print("hello world", flush=True)
-#     print(datetime.datetime.now())
-    
-# # schedule.every().second.do(test)
-# schedule.every().day.at(time_to_scrap).do(lambda: asyncio.run(main()))
-
-# while True:
-#     schedule.run_pending()
-#     sleep(1)
-# # asyncio.run(main())

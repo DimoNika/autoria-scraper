@@ -12,5 +12,5 @@ RUN pip install --upgrade pip && pip install -r requirements.txt \
 
 
 
-# Command to run the app with Uvicorn
+# Command to run the app
 CMD ["python3", "main.py"]

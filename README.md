@@ -23,7 +23,7 @@ Initializes virtual environment
 
 9. Make .env at /shared, copy contains from .env.example and set variables.
 
-10. ```docker compose -f "docker-compose.yml" up --build "db".```
+10. ```docker compose -f "docker-compose.yml" up -d --build "db".```
 Runs db container
 
 11. ```alembic upgrade head```
